@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="ne">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>कर्मचारी तलब विवरण तयार गर्ने Tool | Salary Search</title>
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&family=Noto+Sans:wght@400;700&display=swap" rel="stylesheet">
+    <!-- PapaParse for CSV processing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <!-- Tailwind CSS for utility styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --primary-crimson: #DC143C;
+            --primary-blue: #0033A0;
+            --accent-gold: #FFD700;
+            --bg-offwhite: #F5F5F0;
+        }
+
+        body {
+            font-family: 'Poppins', 'Noto Sans', sans-serif;
+            background-color: var(--bg-offwhite);
+            color: #333;
+        }
+
+        .gov-header {
+            background: linear-gradient(135deg, var(--primary-blue) 0%, #001f5f 100%);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .mountain-bg {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 60px;
+            fill: rgba(255, 255, 255, 0.1);
+            pointer-events: none;
+        }
+
+        .search-suggestion-item:hover {
+            background-color: #f0f0f0;
+        }
+
+        .numeric-cell {
+            font-family: monospace;
+            text-align: right;
+        }
+
+        /* Click to copy styling */
+        .copyable {
+            cursor: pointer;
+            position: relative;
+            transition: background-color 0.2s;
+        }
+        .copyable:hover {
+            background-color: #fef3c7 !important; /* light yellow */
+        }
+        .copyable:active {
+            background-color: #fde68a !important;
+        }
+        .copy-toast {
+            position: absolute;
+            top: -20px;
+            right: 10px;
+            background: #059669;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s, transform 0.3s;
+        }
+        .copy-toast.show {
+            opacity: 1;
+            transform: translateY(-5px);
+        }
+
+        .danphe-watermark {
+            opacity: 0.05;
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 150px;
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        .btn-primary {
+            background-color: var(--primary-crimson);
+            color: white;
+            transition: all 0.2s;
+        }
+
+        .btn-primary:hover {
+            background-color: #b01030;
+            transform: translateY(-1px);
+        }
+
+        .collapsible-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }
+
+        .collapsible-content.open {
+            max-height: 1000px;
+        }
+
+        .custom-shadow {
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        }
+
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(255, 255, 255, 0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-red-600 mb-4"></div>
+        <p class="text-lg font-semibold">तथ्याङ्क प्रशोधन गर्दै...</p>
+    </div>
+
+    <!-- Header -->
+    <header class="gov-header text-white py-8 px-4 text-center shadow-lg relative">
+        <svg class="mountain-bg" viewBox="0 0 1440 120" preserveAspectRatio="none">
+            <path d="M0,120 L120,80 L240,100 L360,40 L480,90 L600,20 L720,80 L840,40 L960,100 L1080,60 L1200,90 L1320,30 L1440,120 Z"></path>
+        </svg>
+        <div class="relative z-10 max-w-4xl mx-auto">
+            <h1 class="text-3xl md:text-4xl font-bold mb-2">कर्मचारी तलब ५०% बनाउने क्यालकुलेटर</h1>
+            <p class="text-blue-100 opacity-90">Employee Salary Search & Information System</p>
+        </div>
+    </header>
+
+    <main class="flex-grow container mx-auto px-4 py-8 max-w-6xl">
+        
+        <!-- Instructions / Landing -->
+        <section id="howToUse" class="mb-8 bg-white rounded-xl p-6 custom-shadow border-t-4 border-red-600">
+            <div class="flex justify-between items-center cursor-pointer" onclick="toggleInstructions()">
+                <h2 class="text-xl font-bold flex items-center">
+                    <span class="mr-2">ℹ️</span> प्रयोग गर्ने तरिका (How to Use)
+                </h2>
+                <span id="instructionIcon" class="text-2xl">−</span>
+            </div>
+            <div id="instructionContent" class="collapsible-content open mt-4">
+                <div class="grid md:grid-cols-2 gap-6 text-sm">
+                    <div>
+                        <ul class="space-y-2 list-disc list-inside text-gray-700">
+                            <li>तपाईंको निकायको अघिल्लो महिनाको Payroll Excelमा डाउनलोड गर्नुहोस्।</li>
+                            <li>Excel फाइललाई CSV वा JSON फाइलमा परिवर्तन गर्नुहोस्।</li>
+                            <li>तपाईंको कर्मचारी डाटा भएको CSV वा JSON फाइल अपलोड गर्नुहोस्।</li>
+                            <li>हेडरहरू: सि.नं., सिटरोल नं., पान नं., नाम, तलब, आदि हुनुपर्छ।</li>
+                            <li>खोज बाकसमा <b>सिटरोल नं.</b>, <b>पान नं.</b> वा <b>नाम</b> टाइप गर्नुहोस्।</li>
+                            <li>सुझावहरूबाट चयन गरेपछि पूर्ण विवरण र ५०% रकम स्वचालित रूपमा देखिनेछ।</li>
+                            <li class="text-red-600 font-semibold">सुझाव: कुनै पनि रकममा क्लिक गरेर त्यसलाई सिधै कपि (Copy) गर्न सक्नुहुन्छ (कमा आफैँ हट्छ)।</li>
+                        </ul>
+                        <div class="mt-4 flex flex-wrap gap-2">
+                            <button onclick="downloadSample()" class="btn-primary px-4 py-2 rounded-lg text-xs font-semibold">
+                                नमुना CSV डाउनलोड गर्नुहोस् (Sample CSV)
+                            </button>
+                        </div>
+                    </div>
+                    <div class="bg-blue-50 p-4 rounded-lg border border-blue-100">
+                        <p class="font-bold text-blue-800 mb-1">एक्सेल फाइल कसरी परिवर्तन गर्ने?</p>
+                        <p class="text-xs text-blue-700 mb-2">Excel -> File -> Save As -> CSV UTF-8</p>
+                        <details class="text-xs">
+                            <summary class="cursor-pointer text-blue-600 font-semibold">Python script (Pandas)</summary>
+                            <pre class="bg-gray-800 text-white p-2 mt-1 rounded overflow-x-auto">
+import pandas as pd
+df = pd.read_excel('data.xlsx')
+df.to_json('data.json', orient='records')</pre>
+                        </details>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Upload Section -->
+        <section id="uploadSection" class="mb-8 bg-white rounded-xl p-8 border-2 border-dashed border-gray-300 text-center hover:border-blue-500 transition-colors cursor-pointer" onclick="document.getElementById('fileInput').click()">
+            <input type="file" id="fileInput" accept=".csv,.json" class="hidden" onchange="handleFileUpload(event)">
+            <div class="flex flex-col items-center">
+                <div class="text-5xl mb-4">📂</div>
+                <h3 class="text-lg font-bold mb-1">फाइल यहाँ तान्नुहोस् वा क्लिक गर्नुहोस्</h3>
+                <p class="text-gray-500 text-sm">प्रणालीले .csv र .json फाइलहरू समर्थन गर्दछ (अधिकतम १०MB)</p>
+                <div id="fileStatus" class="mt-4 hidden font-semibold text-green-600"></div>
+            </div>
+        </section>
+
+        <!-- Search Section (Hidden until upload) -->
+        <section id="searchSection" class="hidden mb-8 space-y-6">
+            <div class="bg-white rounded-xl p-6 custom-shadow">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="relative">
+                        <label class="block text-xs font-bold text-gray-600 mb-1">सिटरोल नं. (Roll No.)</label>
+                        <input type="text" id="searchRoll" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-400 outline-none" placeholder="खोज्नुहोस्..." oninput="handleSearch(event, 'सिटरोल नं.')">
+                        <div id="suggestRoll" class="absolute z-20 w-full mt-1 bg-white border rounded-lg shadow-xl hidden max-h-60 overflow-y-auto"></div>
+                    </div>
+                    <div class="relative">
+                        <label class="block text-xs font-bold text-gray-600 mb-1">पान नं. (PAN)</label>
+                        <input type="text" id="searchPAN" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-400 outline-none" placeholder="खोज्नुहोस्..." oninput="handleSearch(event, 'पान नं.')">
+                        <div id="suggestPAN" class="absolute z-20 w-full mt-1 bg-white border rounded-lg shadow-xl hidden max-h-60 overflow-y-auto"></div>
+                    </div>
+                    <div class="relative">
+                        <label class="block text-xs font-bold text-gray-600 mb-1">नाम (Name)</label>
+                        <input type="text" id="searchName" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-400 outline-none" placeholder="खोज्नुहोस्..." oninput="handleSearch(event, 'नाम')">
+                        <div id="suggestName" class="absolute z-20 w-full mt-1 bg-white border rounded-lg shadow-xl hidden max-h-60 overflow-y-auto"></div>
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-between gap-4">
+                    <div class="flex gap-2">
+                        <button onclick="resetSearch()" class="bg-gray-200 hover:bg-gray-300 px-6 py-2 rounded-lg font-semibold transition-colors">रद्द गर्नुहोस् (Clear)</button>
+                    </div>
+                    <p id="recordCount" class="text-sm text-gray-500 italic flex items-center"></p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Preview / Result Display -->
+        <section id="displayArea" class="hidden">
+            <!-- Summary Card for Search Result -->
+            <div id="employeeCard" class="bg-white rounded-xl custom-shadow overflow-hidden hidden animate-fadeIn">
+                <div class="bg-blue-800 text-white p-4 flex justify-between items-center">
+                    <div>
+                        <h2 id="cardEmpName" class="text-2xl font-bold"></h2>
+                        <p id="cardEmpTitle" class="text-blue-100"></p>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-xs uppercase opacity-75">पान नं.</div>
+                        <div id="cardEmpPAN" class="font-bold"></div>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-gray-50 border-b">
+                            <tr>
+                                <th class="p-4 text-left font-bold text-gray-600">विवरण (Description)</th>
+                                <th class="p-4 text-right font-bold text-gray-600">मूल रकम (Original)</th>
+                                <th class="p-4 text-right font-bold text-gray-600">आधा रकम (50%)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="resultTableBody">
+                            <!-- Rows dynamic -->
+                        </tbody>
+                        <tfoot class="bg-red-50 font-bold border-t-2 border-red-200">
+                            <tr id="totalRow">
+                                <td class="p-4 text-red-800">कुल जम्मा (Total Sum)</td>
+                                <td id="sumOriginal" class="p-4 text-right text-red-800 copyable" onclick="copyValue(this)"></td>
+                                <td id="sumHalf" class="p-4 text-right text-red-800 copyable" onclick="copyValue(this)"></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Preview Table (shown right after upload) -->
+            <div id="previewTableContainer" class="bg-white rounded-xl p-6 custom-shadow overflow-hidden">
+                <h4 class="font-bold mb-4 flex items-center"><span class="mr-2">📄</span> भर्खरै अपलोड गरिएको डाटाको झलक (Preview)</h4>
+                <div class="overflow-x-auto">
+                    <table id="previewTable" class="w-full text-xs text-left">
+                        <thead class="bg-gray-100">
+                            <tr id="previewHeader"></tr>
+                        </thead>
+                        <tbody id="previewBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- No Match Message -->
+        <div id="noMatchMessage" class="hidden bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg my-8 text-yellow-700">
+            <p class="font-bold">कर्मचारी भेटिएन!</p>
+            <p>कृपया पुनः जाँच गर्नुहोस् वा फरक कुञ्जी शब्द प्रयोग गर्नुहोस्।</p>
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-gray-900 text-gray-400 py-10 px-4 mt-auto">
+        <div class="max-w-6xl mx-auto grid md:grid-cols-3 gap-8">
+            <div>
+                <h4 class="text-white font-bold mb-4">तलब खोज प्रणाली</h4>
+                <p class="text-sm">यो एक सुरक्षित र पूर्णतया स्थानीय वेब अनुप्रयोग हो। तपाईंको डाटा सर्भरमा अपलोड हुँदैन।</p>
+            </div>
+            <div>
+                <h4 class="text-white font-bold mb-4">लिङ्कहरू</h4>
+                <ul class="text-sm space-y-2">
+                    <li><a href="qr.jpg" class="hover:text-white" id="future-link">Developer लाई कफि किनिदिनुहोस्।</a></li>
+                    <!-- <li><a href="mailto:report@example.com" class="hover:text-white">समस्या रिपोर्ट गर्नुहोस् (Report Issue)</a></li> -->
+                </ul>
+            </div>
+            <div class="text-right flex flex-col items-end">
+                <div class="text-white font-bold mb-2">© 2026 Bibek Rai</div>
+                <p class="text-xs">All rights reserved.</p>
+                <div class="mt-4 flex gap-2">
+                    <span class="w-8 h-1 bg-red-600"></span>
+                    <span class="w-8 h-1 bg-blue-600"></span>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Danphe Watermark -->
+    <svg class="danphe-watermark" viewBox="0 0 100 100" fill="currentColor">
+        <path d="M50 10C30 10 10 30 10 50C10 70 30 90 50 90C70 90 90 70 90 50C90 30 70 10 50 10ZM50 20C65 20 78 32 78 47C78 62 65 74 50 74C35 74 22 62 22 47C22 32 35 20 50 20Z" />
+        <text x="50" y="60" font-size="40" text-anchor="middle">🦚</text>
+    </svg>
+
+    <script>
+        // App State
+        let rawData = [];
+        let indexMap = {
+            'सिटरोल नं.': new Map(),
+            'पान नं.': new Map(),
+            'नाम': new Map()
+        };
+        const numericColumns = [
+            'तलब', 'ग्रेड', 'क.सं.कोष (तलब)', 'क.सं.कोष (तलब) कट्टी', 
+            'ना.ल.कोष (तलब) कट्टी', 'निवृत्तीभरण कोष(तलब)', 'निवृत्तीभरण कोष(तलब) कट्टी',
+            'सामाजिक सुरक्षा कर (तलब) कट्टी', 'पारिश्रमिक कर (तलब) कट्टी', 
+            'योगदानमा आधारीत/सावधिक बिमा कोष(तलब)', 'योगदानमा आधारीत/सावधिक बिमा कोष(तलब) कट्टी',
+            'महंगी भत्ता', 'ईन्घन', 'मर्मत', 'सञ्चार', 'ह.स.चा.'
+        ];
+
+        // UI Helpers
+        function toggleInstructions() {
+            const content = document.getElementById('instructionContent');
+            const icon = document.getElementById('instructionIcon');
+            content.classList.toggle('open');
+            icon.innerText = content.classList.contains('open') ? '−' : '+';
+        }
+
+        function showLoading(show) {
+            document.getElementById('loadingOverlay').style.display = show ? 'flex' : 'none';
+        }
+
+        function resetSearch() {
+            document.querySelectorAll('input[type="text"]').forEach(i => i.value = '');
+            document.querySelectorAll('[id^="suggest"]').forEach(s => s.classList.add('hidden'));
+            document.getElementById('employeeCard').classList.add('hidden');
+            document.getElementById('noMatchMessage').classList.add('hidden');
+            document.getElementById('previewTableContainer').classList.remove('hidden');
+        }
+
+        // Clipboard Helper
+        function copyValue(element) {
+            // Get original text, remove commas
+            const text = element.innerText.replace(/,/g, '');
+            const valToCopy = text.trim();
+            
+            // Standard copy to clipboard
+            const textArea = document.createElement("textarea");
+            textArea.value = valToCopy;
+            document.body.appendChild(textArea);
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                showCopyToast(element);
+            } catch (err) {
+                console.error('Failed to copy', err);
+            }
+            document.body.removeChild(textArea);
+        }
+
+        function showCopyToast(element) {
+            // Create toast if it doesn't exist in element
+            let toast = element.querySelector('.copy-toast');
+            if (!toast) {
+                toast = document.createElement('div');
+                toast.className = 'copy-toast';
+                toast.innerText = 'Copied!';
+                element.appendChild(toast);
+            }
+            
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 1000);
+        }
+
+        // CSV/JSON Parsing
+        async function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            showLoading(true);
+            const status = document.getElementById('fileStatus');
+            status.innerText = `प्रशोधन गर्दै: ${file.name}...`;
+            status.classList.remove('hidden', 'text-red-600');
+            status.classList.add('text-green-600');
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    const content = e.target.result;
+                    if (file.name.endsWith('.json')) {
+                        processData(JSON.parse(content));
+                    } else {
+                        Papa.parse(content, {
+                            header: true,
+                            skipEmptyLines: true,
+                            dynamicTyping: true,
+                            complete: (results) => {
+                                const cleanedData = results.data.map(row => {
+                                    const newRow = {};
+                                    Object.keys(row).forEach(key => {
+                                        newRow[key.trim()] = row[key];
+                                    });
+                                    return newRow;
+                                });
+                                processData(cleanedData);
+                            },
+                            error: (err) => showError("CSV फाइल पार्स गर्दा त्रुटि भयो।")
+                        });
+                    }
+                } catch (err) {
+                    showError("फाइल पढ्दा त्रुटि भयो। फाइल संरचना सही छ कि छैन जाँच गर्नुहोस्।");
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function processData(data) {
+            if (!data || data.length === 0) {
+                showError("फाइल खाली छ।");
+                return;
+            }
+
+            const required = ['सिटरोल नं.', 'पान नं.', 'नाम'];
+            const headers = Object.keys(data[0]);
+            const missing = required.filter(r => !headers.includes(r));
+            if (missing.length > 0) {
+                showError(`फाइलमा आवश्यक कोलमहरू फेला परेन: ${missing.join(', ')}`);
+                return;
+            }
+
+            rawData = data;
+            buildIndices();
+            renderPreview();
+            
+            document.getElementById('searchSection').classList.remove('hidden');
+            document.getElementById('displayArea').classList.remove('hidden');
+            document.getElementById('recordCount').innerText = `कुल रेकर्डहरू: ${rawData.length}`;
+            showLoading(false);
+        }
+
+        function buildIndices() {
+            indexMap['सिटरोल नं.'].clear();
+            indexMap['पान नं.'].clear();
+            indexMap['नाम'].clear();
+
+            rawData.forEach((row) => {
+                if (row['सिटरोल नं.']) indexMap['सिटरोल नं.'].set(String(row['सिटरोल नं.']).toLowerCase(), row);
+                if (row['पान नं.']) indexMap['पान नं.'].set(String(row['पान नं.']).toLowerCase(), row);
+                if (row['नाम']) indexMap['नाम'].set(String(row['नाम']).toLowerCase(), row);
+            });
+        }
+
+        function showError(msg) {
+            alert(msg);
+            showLoading(false);
+        }
+
+        let debounceTimer;
+        function handleSearch(event, field) {
+            clearTimeout(debounceTimer);
+            const val = event.target.value.trim().toLowerCase();
+            const suggestBoxId = field === 'सिटरोल नं.' ? 'suggestRoll' : (field === 'पान नं.' ? 'suggestPAN' : 'suggestName');
+            const suggestBox = document.getElementById(suggestBoxId);
+
+            if (val.length < 2) {
+                suggestBox.classList.add('hidden');
+                return;
+            }
+
+            debounceTimer = setTimeout(() => {
+                const matches = rawData.filter(row => {
+                    const cellValue = String(row[field] || "").toLowerCase();
+                    return cellValue.includes(val);
+                }).slice(0, 15);
+
+                renderSuggestions(matches, field, suggestBox);
+            }, 300);
+        }
+
+        function renderSuggestions(matches, field, container) {
+            if (matches.length === 0) {
+                container.innerHTML = `<div class="p-3 text-gray-500 text-sm italic">कुनै नतिजा भेटिएन</div>`;
+            } else {
+                container.innerHTML = matches.map(m => `
+                    <div class="search-suggestion-item p-3 cursor-pointer border-b last:border-0" onclick="selectEmployee('${m[field]}', '${field}')">
+                        <div class="font-bold text-blue-900">${m['नाम']}</div>
+                        <div class="text-xs text-gray-500">${m['सिटरोल नं.']} | ${m['पद'] || 'पद नखुलेको'}</div>
+                    </div>
+                `).join('');
+            }
+            container.classList.remove('hidden');
+        }
+
+        function selectEmployee(value, field) {
+            const emp = rawData.find(r => String(r[field]).toLowerCase() === String(value).toLowerCase());
+            if (emp) {
+                document.querySelectorAll('input[type="text"]').forEach(i => i.value = '');
+                const inputId = field === 'सिटरोल नं.' ? 'searchRoll' : (field === 'पान नं.' ? 'searchPAN' : 'searchName');
+                document.getElementById(inputId).value = emp[field];
+                document.querySelectorAll('[id^="suggest"]').forEach(s => s.classList.add('hidden'));
+                showEmployeeDetails(emp);
+            }
+        }
+
+        function formatCurrency(val) {
+            if (val === null || val === undefined || val === "" || isNaN(val)) return "0.00";
+            return parseFloat(val).toLocaleString('ne-NP', { minimumFractionDigits: 2 });
+        }
+
+        function showEmployeeDetails(emp) {
+            const card = document.getElementById('employeeCard');
+            const tableBody = document.getElementById('resultTableBody');
+            const preview = document.getElementById('previewTableContainer');
+            
+            preview.classList.add('hidden');
+            card.classList.remove('hidden');
+            document.getElementById('noMatchMessage').classList.add('hidden');
+
+            document.getElementById('cardEmpName').innerText = emp['नाम'];
+            document.getElementById('cardEmpTitle').innerText = `${emp['पद'] || 'N/A'} | ${emp['लिङ्ग'] || ''} | ${emp['वैवाहिक स्थिति'] || ''}`;
+            document.getElementById('cardEmpPAN').innerText = emp['पान नं.'] || 'N/A';
+
+            let html = "";
+            let totalOrig = 0;
+            let totalHalf = 0;
+
+            Object.keys(emp).forEach(key => {
+                const val = emp[key];
+                const isNumeric = numericColumns.includes(key);
+                
+                if (isNumeric) {
+                    const numVal = parseFloat(val) || 0;
+                    const halfVal = numVal / 2;
+                    totalOrig += numVal;
+                    totalHalf += halfVal;
+
+                    html += `
+                        <tr class="border-b hover:bg-gray-50">
+                            <td class="p-4 font-semibold text-gray-700">${key}</td>
+                            <td class="p-4 text-right numeric-cell font-bold text-blue-800 copyable" onclick="copyValue(this)">${formatCurrency(numVal)}</td>
+                            <td class="p-4 text-right numeric-cell text-green-700 copyable" onclick="copyValue(this)">${formatCurrency(halfVal)}</td>
+                        </tr>
+                    `;
+                } else if (!['नाम', 'पद', 'लिङ्ग', 'वैवाहिक स्थिति', 'पान नं.'].includes(key)) {
+                    // Other non-highlighted fields
+                    html += `
+                        <tr class="border-b hover:bg-gray-50 bg-gray-50/30">
+                            <td class="p-4 font-semibold text-gray-500">${key}</td>
+                            <td class="p-4 text-right text-gray-600">${val || '—'}</td>
+                            <td class="p-4 text-right text-gray-400 italic">N/A</td>
+                        </tr>
+                    `;
+                }
+            });
+
+            tableBody.innerHTML = html;
+            document.getElementById('sumOriginal').innerText = formatCurrency(totalOrig);
+            document.getElementById('sumHalf').innerText = formatCurrency(totalHalf);
+            
+            // Smooth scroll to card
+            card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        function renderPreview() {
+            const headerRow = document.getElementById('previewHeader');
+            const bodyRow = document.getElementById('previewBody');
+            const headers = Object.keys(rawData[0]);
+            headerRow.innerHTML = headers.map(h => `<th class="p-2 border text-gray-600">${h}</th>`).join('');
+            bodyRow.innerHTML = rawData.slice(0, 5).map(row => `
+                <tr class="border-b">
+                    ${headers.map(h => `<td class="p-2 border truncate max-w-[150px]">${row[h] || ''}</td>`).join('')}
+                </tr>
+            `).join('');
+        }
+
+        function downloadSample() {
+            const sample = [
+                {
+                    "सि.नं.": 1, "सिटरोल नं.": 099999, "पान नं.": 122222222, "नाम": "मर्मित विश्वकर्मा", 
+                    "लिङ्ग": "पुरुष", "वैवाहिक स्थिति": "विवाहित", "पद": "कम्प्यूटर अपरेटर", "तलब": 34730, "ग्रेड": 3474, 
+                    "क.सं.कोष (तलब)": 3820.4, "महंगी भत्ता": 5000
+                },
+                {
+                    "सि.नं.": 2, "सिटरोल नं.": 100004, "पान नं.": 010000005, "नाम": "निहोन राई", 
+                    "लिङ्ग": "पुरुष", "वैवाहिक स्थिति": "अविवाहित", "पद": "अधिकृत", "तलब": 45000, "ग्रेड": 5000, 
+                    "क.सं.कोष (तलब)": 4500, "महंगी भत्ता": 5000
+                }
+            ];
+            const csv = Papa.unparse(sample);
+            const blob = new Blob(["\ufeff", csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = "sample_salary_data.csv";
+            link.click();
+        }
+
+        window.addEventListener('click', function(e) {
+            if (!e.target.closest('.relative')) {
+                document.querySelectorAll('[id^="suggest"]').forEach(s => s.classList.add('hidden'));
+            }
+        });
+    </script>
+</body>
+</html>
